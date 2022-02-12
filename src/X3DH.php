@@ -13,6 +13,7 @@ class X3DH
     private string $preKeySignature;
 
     private array $oneTimeKeys = [];
+    /** @var array<string, RatchetState> */
     private array $ratchets = [];
 
     public function __construct()
@@ -89,6 +90,16 @@ class X3DH
         );
 
         return $this->ratchets[$contact]->receiveNew($message->getInitialMessage());
+    }
+
+    public function sendTo(string $contact, string $message): Message
+    {
+        return $this->ratchets[$contact]->sendNew($message);
+    }
+
+    public function receiveFrom(string $contact, Message $message): string
+    {
+        return $this->ratchets[$contact]->receiveNew($message);
     }
 
     private function DH(string $x, string $y): string
