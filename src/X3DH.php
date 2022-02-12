@@ -2,9 +2,13 @@
 
 declare(strict_types=1);
 
+namespace NoSignal;
+
 class X3DH
 {
     private string $identityKey;
+    private string $identityKeyX25519;
+
     private string $preKey;
     private string $preKeySignature;
 
@@ -13,11 +17,17 @@ class X3DH
 
     public function __construct()
     {
-        $this->identityKey = \sodium_crypto_kx_keypair();
+        $this->identityKey = \sodium_crypto_sign_keypair();
+        $this->identityKeyX25519 = \sodium_crypto_sign_ed25519_sk_to_curve25519(
+            \sodium_crypto_sign_secretkey($this->identityKey)
+        ) . \sodium_crypto_sign_ed25519_pk_to_curve25519(
+            \sodium_crypto_sign_publickey($this->identityKey)
+        );
+
         $this->preKey = \sodium_crypto_kx_keypair();
         $this->preKeySignature = \sodium_crypto_sign_detached(
             \sodium_crypto_generichash(\sodium_crypto_kx_publickey($this->preKey)),
-            $this->identityKey
+            \sodium_crypto_sign_secretkey($this->identityKey)
         );
     }
 
@@ -28,8 +38,8 @@ class X3DH
         $this->oneTimeKeys[$contact] = $oneTimeKey;
 
         return new PreKeyHandshakeMessage(
-            \sodium_crypto_kx_publickey($this->identityKey),
-            $this->preKey,
+            \sodium_crypto_sign_publickey($this->identityKey),
+            \sodium_crypto_kx_publickey($this->preKey),
             $this->preKeySignature,
             \sodium_crypto_kx_publickey($oneTimeKey)
         );
@@ -39,7 +49,7 @@ class X3DH
     {
         if (!\sodium_crypto_sign_verify_detached(
             $message->getPreKeySignature(),
-            $message->getPreKey(),
+            \sodium_crypto_generichash($message->getPreKey()),
             $message->getIdentityKey()
         )) {
             throw new \RuntimeException('invalid prekey sig');
@@ -47,8 +57,8 @@ class X3DH
 
         $ephemeralKey = \sodium_crypto_kx_keypair();
 
-        $dh1 = $this->DH($this->identityKey, $message->getPreKey());
-        $dh2 = $this->DH($ephemeralKey, $message->getIdentityKey());
+        $dh1 = $this->DH($this->identityKeyX25519, $message->getPreKey());
+        $dh2 = $this->DH($ephemeralKey, \sodium_crypto_sign_ed25519_pk_to_curve25519($message->getIdentityKey()));
         $dh3 = $this->DH($ephemeralKey, $message->getPreKey());
         $dh4 = $this->DH($ephemeralKey, $message->getOneTimeKey());
 
@@ -57,7 +67,7 @@ class X3DH
         $this->ratchets[$contact] = RatchetState::fromPublicKey($contact, $secretKey, $message->getOneTimeKey());
 
         return new InitialMessage(
-            \sodium_crypto_kx_publickey($this->identityKey),
+            \sodium_crypto_sign_publickey($this->identityKey),
             \sodium_crypto_kx_publickey($ephemeralKey),
             $this->ratchets[$contact]->sendNew('hello world')
         );
@@ -65,8 +75,8 @@ class X3DH
 
     public function receiveInitialMessage(string $contact, InitialMessage $message): string
     {
-        $dh1 = $this->DH($this->preKey, $message->getIdentityKey());
-        $dh2 = $this->DH($this->identityKey, $message->getEphemeralKey());
+        $dh1 = $this->DH($this->preKey, \sodium_crypto_sign_ed25519_pk_to_curve25519($message->getIdentityKey()));
+        $dh2 = $this->DH($this->identityKeyX25519, $message->getEphemeralKey());
         $dh3 = $this->DH($this->preKey, $message->getEphemeralKey());
         $dh4 = $this->DH($this->oneTimeKeys[$contact], $message->getEphemeralKey());
 
@@ -75,7 +85,6 @@ class X3DH
         $this->ratchets[$contact] = RatchetState::fromKeyPair(
             $contact,
             $secretKey,
-            $message->getInitialMessage()->getRatchetPublicKey(),
             $this->oneTimeKeys[$contact]
         );
 
@@ -89,7 +98,8 @@ class X3DH
 
     private function KDF_SK(string $dh1, string $dh2, string $dh3, string $dh4): string
     {
-        $priKey = \sodium_crypto_generichash('no-signal-handshake' . 0x00, $dh1 . $dh2 . $dh3 . $dh4);
+        $key = \sodium_crypto_generichash($dh1 . $dh2 . $dh3 . $dh4);
+        $priKey = \sodium_crypto_generichash('no-signal-handshake' . 0x00, $key);
         $secretKey = \sodium_crypto_generichash('no-signal-handshake' . 0x01, $priKey);
         return $secretKey;
     }

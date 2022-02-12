@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+namespace NoSignal;
+
 class InitialMessage
 {
     public function __construct(

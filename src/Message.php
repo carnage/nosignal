@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+namespace NoSignal;
+
 class Message implements \JsonSerializable
 {
     public function __construct(

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+namespace NoSignal;
+
 class RatchetState
 {
     private const MAX_SKIP = 1000;
@@ -36,14 +38,12 @@ class RatchetState
         return $instance;
     }
 
-    public static function fromKeyPair(string $contact, string $secretKey, string $contactPublicKey, string $keyPair): self
+    public static function fromKeyPair(string $contact, string $secretKey, string $keyPair): self
     {
         $instance = new self();
         $instance->contact = $contact;
         $instance->DHs = $keyPair;
-        $instance->DHr = $contactPublicKey;
-        list($instance->rootKey, $instance->chainKeySending) =
-            $instance->KDF_RK($secretKey, $instance->DH($instance->DHs, $instance->DHr));
+        $instance->rootKey = $secretKey;
 
         return $instance;
     }
@@ -102,12 +102,11 @@ class RatchetState
                 $messageKey
             );
         }
-        if ($message->getRatchetPublicKey() !== $this->DHr) {
+        if (!isset($this->DHr) || $message->getRatchetPublicKey() !== $this->DHr) {
             //handle out of order message
             $this->skipMessageKeys($message->getPreviousSendingChainLength());
             $this->dhRatchet($message->getRatchetPublicKey());
         }
-
         $this->skipMessageKeys($message->getSequenceNumber());
         list($this->chainKeyReceiving, $messageKey) = $this->KDF_CK($this->chainKeyReceiving);
         $this->receivingSequenceNumber++;
