@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace NoSignal;
 
-class Message implements \JsonSerializable
+class Message
 {
     public function __construct(
         private string $cipherText,
@@ -39,19 +39,31 @@ class Message implements \JsonSerializable
         return $this->ratchetPublicKey;
     }
 
-    public function jsonSerialize(): array
-    {
-        return [
-            $this->cipherText,
-            $this->nonce,
-            $this->sequenceNumber,
-            $this->previousSendingChainLength,
-            $this->ratchetPublicKey,
-        ];
-    }
-
     public function toString(): string
     {
-        return \sodium_bin2base64(json_encode($this), \SODIUM_BASE64_VARIANT_ORIGINAL);
+        return implode('.', [
+            'M',
+            \sodium_bin2base64($this->cipherText, \SODIUM_BASE64_VARIANT_ORIGINAL),
+            \sodium_bin2base64($this->nonce, \SODIUM_BASE64_VARIANT_ORIGINAL),
+            \sodium_bin2base64((string) $this->previousSendingChainLength, \SODIUM_BASE64_VARIANT_ORIGINAL),
+            \sodium_bin2base64((string) $this->sequenceNumber, \SODIUM_BASE64_VARIANT_ORIGINAL),
+            \sodium_bin2base64($this->ratchetPublicKey, \SODIUM_BASE64_VARIANT_ORIGINAL),
+        ]);
+    }
+
+    public static function fromString(string $data): self
+    {
+        $data = explode('.', $data);
+        if ($data[0] !== 'M' || count($data) !== 6) {
+            throw new \RuntimeException('Invalid message');
+        }
+
+        return new self(
+            \sodium_base642bin($data[1], \SODIUM_BASE64_VARIANT_ORIGINAL),
+            \sodium_base642bin($data[2], \SODIUM_BASE64_VARIANT_ORIGINAL),
+            (int) \sodium_base642bin($data[3], \SODIUM_BASE64_VARIANT_ORIGINAL),
+            (int) \sodium_base642bin($data[4], \SODIUM_BASE64_VARIANT_ORIGINAL),
+            \sodium_base642bin($data[5], \SODIUM_BASE64_VARIANT_ORIGINAL),
+        );
     }
 }
